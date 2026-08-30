@@ -10,7 +10,7 @@ use aura_os_core::{
 use aura_os_sessions::{storage_enriched_session_to_enriched_session, storage_session_to_session};
 use aura_os_storage::{
     CreateSessionEventRequest, CreateSessionRequest, StorageClient, StorageSession,
-    StorageSessionEvent, SESSION_STATUS_DELETED,
+    StorageSessionEvent, UpdateSessionRequest, SESSION_STATUS_DELETED,
 };
 
 use crate::error::{map_storage_error, ApiError, ApiResult};
@@ -420,6 +420,79 @@ fn branch_event_prefix(
     };
     events.truncate(target_index + 1);
     Ok(events)
+}
+
+const MAX_SESSION_TITLE_CHARACTERS: usize = 120;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RenameSessionRequest {
+    title: String,
+}
+
+/// Replace the generated session summary with a user-authored title.
+///
+/// The summary field already is the canonical list label, so this stays
+/// compatible with existing storage deployments and all session-list clients.
+pub(crate) async fn rename_session(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((project_id, agent_instance_id, session_id)): Path<(
+        ProjectId,
+        AgentInstanceId,
+        SessionId,
+    )>,
+    Json(request): Json<RenameSessionRequest>,
+) -> ApiResult<axum::http::StatusCode> {
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err(ApiError::bad_request("session title cannot be empty"));
+    }
+    if title.chars().count() > MAX_SESSION_TITLE_CHARACTERS {
+        return Err(ApiError::bad_request(format!(
+            "session title cannot exceed {MAX_SESSION_TITLE_CHARACTERS} characters"
+        )));
+    }
+
+    let storage = state.require_storage_client()?;
+    let project_id = project_id.to_string();
+    let agent_instance_id = agent_instance_id.to_string();
+    let session_id = session_id.to_string();
+    let session = storage
+        .get_session(&session_id, &jwt)
+        .await
+        .map_err(|error| match &error {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
+                ApiError::not_found("session not found")
+            }
+            _ => map_storage_error(error),
+        })?;
+    reject_deleted_storage_session(&session, "session not found")?;
+    if session
+        .project_id
+        .as_deref()
+        .is_some_and(|id| id != project_id)
+        || session
+            .project_agent_id
+            .as_deref()
+            .is_some_and(|id| id != agent_instance_id)
+    {
+        return Err(ApiError::not_found("session not found"));
+    }
+
+    storage
+        .update_session(
+            &session_id,
+            &jwt,
+            &UpdateSessionRequest {
+                summary_of_previous_context: Some(title.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(map_storage_error)?;
+    info!(%session_id, "Session renamed");
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn delete_session(

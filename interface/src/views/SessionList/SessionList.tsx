@@ -6,6 +6,7 @@ import {
   type AnnotatedSession,
   formatDeleteSessionError,
   SessionsList,
+  useSessionRenameAction,
   useSessionNavigate,
 } from "../../components/SessionsList";
 import {
@@ -22,6 +23,7 @@ import { useSessionListData } from "./useSessionListData";
  */
 export function SessionList({ searchQuery }: { searchQuery: string }) {
   const {
+    surfaceKey,
     sessions,
     loading,
     removeSession,
@@ -29,6 +31,7 @@ export function SessionList({ searchQuery }: { searchQuery: string }) {
     deleteError,
     setDeleteError,
   } = useSessionListData();
+  const renameSession = useSessionRenameAction(surfaceKey);
   const handleSessionClick = useSessionNavigate({ agentId: null });
   const [searchParams] = useSearchParams();
   const selectedSessionId = searchParams.get("session");
@@ -84,6 +87,7 @@ export function SessionList({ searchQuery }: { searchQuery: string }) {
       onSessionClick={handleSessionClick}
       onSessionHover={handleSessionHover}
       onDeleteSession={handleDelete}
+      onRenameSession={renameSession}
       searchQuery={searchQuery}
       deleteError={deleteError}
       onDismissError={handleDismissError}

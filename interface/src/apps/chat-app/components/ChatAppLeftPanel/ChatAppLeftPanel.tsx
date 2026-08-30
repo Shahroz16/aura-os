@@ -8,6 +8,7 @@ import {
   deriveSessionLabel,
   formatDeleteSessionError,
   SessionsList,
+  useSessionRenameAction,
 } from "../../../../components/SessionsList";
 import { EmptyState } from "../../../../components/EmptyState";
 import { Avatar } from "../../../../components/Avatar";
@@ -422,6 +423,7 @@ export function ChatAppLeftPanel() {
     [],
   );
   const deleteError = useSessionsDeleteError(primarySurfaceKey);
+  const renameSession = useSessionRenameAction(primarySurfaceKey);
 
   const handleDismissError = useCallback(() => {
     if (!primarySurfaceKey) return;
@@ -487,6 +489,7 @@ export function ChatAppLeftPanel() {
         onSessionClick={handleSessionClick}
         onSessionHover={handleSessionHover}
         onDeleteSession={handleDelete}
+        onRenameSession={renameSession}
         searchQuery={searchQuery}
         deleteError={deleteError}
         onDismissError={handleDismissError}

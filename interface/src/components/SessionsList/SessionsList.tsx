@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -28,6 +29,7 @@ interface SessionsListProps {
   selectedSessionId: string | null;
   onSessionClick: (session: AnnotatedSession) => void;
   onDeleteSession?: (session: AnnotatedSession) => void;
+  onRenameSession?: (session: AnnotatedSession, title: string) => void;
   /**
    * Optional hover hook — fired on `onMouseEnter` of each row so the
    * caller can pre-warm the destination chat-history-store entry for
@@ -134,6 +136,7 @@ export function SessionsList({
   selectedSessionId,
   onSessionClick,
   onDeleteSession,
+  onRenameSession,
   onSessionHover,
   searchQuery,
   deleteError,
@@ -173,6 +176,8 @@ export function SessionsList({
 
   const summaries = useSessionSummaries(safeSessions, visibleSessionIds);
   const lastHoveredSessionIdRef = useRef<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AnnotatedSession | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   // Live-update of the row label when the backend's on-send title
   // generator (apps/aura-os-server/src/handlers/agents/sessions.rs
@@ -241,12 +246,35 @@ export function SessionsList({
 
   const handleMenuAction = useCallback(
     (actionId: string, rowId: string) => {
-      if (actionId !== "delete") return;
       const target = sessionById.get(rowId);
-      if (target) onDeleteSession?.(target);
+      if (!target) return;
+      if (actionId === "rename") {
+        setRenameTarget(target);
+        setRenameValue(
+          deriveSessionLabel(target, summaries[target.session_id]),
+        );
+      }
+      if (actionId === "delete") onDeleteSession?.(target);
     },
-    [sessionById, onDeleteSession],
+    [sessionById, summaries, onDeleteSession],
   );
+
+  const submitRename = useCallback(
+    (event: FormEvent) => {
+      event.preventDefault();
+      const title = renameValue.trim();
+      if (!renameTarget || !title) return;
+      onRenameSession?.(renameTarget, title);
+      setRenameTarget(null);
+      setRenameValue("");
+    },
+    [onRenameSession, renameTarget, renameValue],
+  );
+
+  const cancelRename = useCallback(() => {
+    setRenameTarget(null);
+    setRenameValue("");
+  }, []);
 
   const handleRowMouseEnter = useCallback(
     (session: AnnotatedSession) => {
@@ -318,14 +346,44 @@ export function SessionsList({
   return (
     <>
       {errorBanner}
+      {renameTarget ? (
+        <form
+          className={styles.renameForm}
+          onSubmit={submitRename}
+          aria-label="Rename session"
+        >
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+            maxLength={120}
+            aria-label="Session title"
+          />
+          <button type="submit" disabled={!renameValue.trim()}>
+            Save
+          </button>
+          <button type="button" onClick={cancelRename}>
+            Cancel
+          </button>
+        </form>
+      ) : null}
       <SidekickList
         sections={sections}
         selectedId={effectiveSelectedSessionId}
         loading={loading && safeSessions.length === 0}
         loadingLabel="Loading sessions..."
         empty={<EmptyState>No sessions yet</EmptyState>}
-        menuActions={onDeleteSession ? ["delete"] : undefined}
-        onMenuAction={onDeleteSession ? handleMenuAction : undefined}
+        menuActions={
+          onRenameSession || onDeleteSession
+            ? [
+                ...(onRenameSession ? (["rename"] as const) : []),
+                ...(onDeleteSession ? (["delete"] as const) : []),
+              ]
+            : undefined
+        }
+        onMenuAction={
+          onRenameSession || onDeleteSession ? handleMenuAction : undefined
+        }
         className={styles.chatsList}
       />
     </>
