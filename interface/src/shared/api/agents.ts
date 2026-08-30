@@ -741,6 +741,21 @@ export const sessionsApi = {
       `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/summarize`,
       { method: "POST" },
     ),
+  setSessionSnoozedUntil: (
+    projectId: ProjectId,
+    agentInstanceId: AgentInstanceId,
+    sessionId: string,
+    snoozedUntil: string | null,
+  ) =>
+    apiFetch<void>(
+      `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/snooze`,
+      {
+        method: "PUT",
+        body: JSON.stringify(
+          snoozedUntil ? { snoozedUntil } : { wake: true },
+        ),
+      },
+    ),
   deleteSession: (projectId: ProjectId, agentInstanceId: AgentInstanceId, sessionId: string) =>
     apiFetch<void>(
       `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}`,

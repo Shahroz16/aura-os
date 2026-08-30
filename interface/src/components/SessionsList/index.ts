@@ -5,6 +5,7 @@ export {
 } from "../../hooks/use-session-streaming";
 export { useSessionNavigate } from "./use-session-navigate";
 export { useSessionSummaries } from "./use-session-summaries";
+export { useSessionSnoozeAction } from "./use-session-snooze-action";
 export { formatDeleteSessionError } from "./format-delete-error";
 export {
   type AnnotatedSession,

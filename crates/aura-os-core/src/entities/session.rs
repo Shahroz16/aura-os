@@ -54,6 +54,9 @@ pub struct Session {
     #[serde(default)]
     pub total_output_tokens: u64,
     pub summary_of_previous_context: String,
+    /// Future wake time for a temporarily hidden conversation.
+    #[serde(default)]
+    pub snoozed_until: Option<DateTime<Utc>>,
     pub status: SessionStatus,
     /// Ephemeral: populated from auth context by the caller; not persisted.
     #[serde(default)]
@@ -77,6 +80,7 @@ impl Session {
             total_input_tokens: 0,
             total_output_tokens: 0,
             summary_of_previous_context: String::new(),
+            snoozed_until: None,
             status: SessionStatus::Active,
             user_id: None,
             model: None,

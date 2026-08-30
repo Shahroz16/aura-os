@@ -1,5 +1,6 @@
 use axum::extract::{Path, State};
 use axum::Json;
+use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -10,7 +11,7 @@ use aura_os_core::{
 use aura_os_sessions::{storage_enriched_session_to_enriched_session, storage_session_to_session};
 use aura_os_storage::{
     CreateSessionEventRequest, CreateSessionRequest, StorageClient, StorageSession,
-    StorageSessionEvent, SESSION_STATUS_DELETED,
+    StorageSessionEvent, UpdateSessionRequest, SESSION_STATUS_DELETED,
 };
 
 use crate::error::{map_storage_error, ApiError, ApiResult};
@@ -420,6 +421,87 @@ fn branch_event_prefix(
     };
     events.truncate(target_index + 1);
     Ok(events)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetSessionSnoozeRequest {
+    #[serde(default)]
+    wake: bool,
+    snoozed_until: Option<String>,
+}
+
+/// Temporarily hide a conversation until a future timestamp, or wake it now.
+pub(crate) async fn set_session_snooze(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((project_id, agent_instance_id, session_id)): Path<(
+        ProjectId,
+        AgentInstanceId,
+        SessionId,
+    )>,
+    Json(request): Json<SetSessionSnoozeRequest>,
+) -> ApiResult<axum::http::StatusCode> {
+    let snoozed_until = match (request.wake, request.snoozed_until.as_deref()) {
+        (true, None) => None,
+        (false, Some(raw)) => {
+            let wake_at = DateTime::parse_from_rfc3339(raw)
+                .map_err(|_| ApiError::bad_request("invalid session snooze time"))?
+                .with_timezone(&Utc);
+            if wake_at <= Utc::now() {
+                return Err(ApiError::bad_request(
+                    "session snooze time must be in the future",
+                ));
+            }
+            Some(wake_at.to_rfc3339())
+        }
+        _ => {
+            return Err(ApiError::bad_request(
+                "provide either a future snoozedUntil or wake=true",
+            ));
+        }
+    };
+
+    let storage = state.require_storage_client()?;
+    let project_id = project_id.to_string();
+    let agent_instance_id = agent_instance_id.to_string();
+    let session_id = session_id.to_string();
+    let session = storage
+        .get_session(&session_id, &jwt)
+        .await
+        .map_err(|error| match &error {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
+                ApiError::not_found("session not found")
+            }
+            _ => map_storage_error(error),
+        })?;
+    reject_deleted_storage_session(&session, "session not found")?;
+    if session
+        .project_id
+        .as_deref()
+        .is_some_and(|id| id != project_id)
+        || session
+            .project_agent_id
+            .as_deref()
+            .is_some_and(|id| id != agent_instance_id)
+    {
+        return Err(ApiError::not_found("session not found"));
+    }
+
+    storage
+        .update_session(
+            &session_id,
+            &jwt,
+            &UpdateSessionRequest {
+                snoozed_until: snoozed_until.clone(),
+                clear_snooze: request.wake.then_some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(map_storage_error)?;
+    info!(%session_id, ?snoozed_until, "Session snooze changed");
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn delete_session(

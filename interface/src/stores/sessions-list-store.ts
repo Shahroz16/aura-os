@@ -337,6 +337,10 @@ interface SessionsListStore {
    * keep their existing array reference to avoid spurious renders.
    */
   setSessionSummary: (sessionId: string, summary: string) => void;
+  setSessionSnoozedUntil: (
+    sessionId: string,
+    snoozedUntil: string | null,
+  ) => void;
   /** Surface the user-facing reason a delete failed for `surfaceKey`. */
   setDeleteError: (surfaceKey: string, message: string | null) => void;
 }
@@ -998,6 +1002,28 @@ export const useSessionsListStore = create<SessionsListStore>((set, get) => ({
     }));
   },
 
+  setSessionSnoozedUntil: (sessionId, snoozedUntil) => {
+    const sessionsBySurface = get().sessionsBySurface;
+    let mutated = false;
+    const nextBySurface: Record<string, AnnotatedSession[]> = {};
+    for (const [key, listValue] of Object.entries(sessionsBySurface)) {
+      const list = ensureAnnotatedSessionArray(listValue);
+      const idx = list.findIndex((session) => session.session_id === sessionId);
+      if (
+        idx === -1 ||
+        (list[idx].snoozed_until ?? null) === snoozedUntil
+      ) {
+        nextBySurface[key] = list;
+        continue;
+      }
+      const nextList = list.slice();
+      nextList[idx] = { ...list[idx], snoozed_until: snoozedUntil };
+      nextBySurface[key] = nextList;
+      mutated = true;
+    }
+    if (mutated) set({ sessionsBySurface: nextBySurface });
+  },
+
   setDeleteError: (surfaceKey, message) => {
     set((state) => ({
       deleteErrorBySurface: {
@@ -1127,6 +1153,10 @@ interface SessionsListActions {
     newSessionId: string,
   ) => void;
   setSessionSummary: (sessionId: string, summary: string) => void;
+  setSessionSnoozedUntil: (
+    sessionId: string,
+    snoozedUntil: string | null,
+  ) => void;
   setDeleteError: (surfaceKey: string, message: string | null) => void;
 }
 
@@ -1147,6 +1177,7 @@ export function useSessionsListActions(): SessionsListActions {
       addOptimisticSession: s.addOptimisticSession,
       replaceSessionId: s.replaceSessionId,
       setSessionSummary: s.setSessionSummary,
+      setSessionSnoozedUntil: s.setSessionSnoozedUntil,
       setDeleteError: s.setDeleteError,
     })),
   );

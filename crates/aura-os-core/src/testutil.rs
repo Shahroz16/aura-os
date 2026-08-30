@@ -84,6 +84,7 @@ pub fn make_session() -> Session {
         total_input_tokens: 0,
         total_output_tokens: 0,
         summary_of_previous_context: String::new(),
+        snoozed_until: None,
         status: SessionStatus::Active,
         user_id: None,
         model: None,

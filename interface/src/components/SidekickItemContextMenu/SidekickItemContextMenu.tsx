@@ -1,12 +1,28 @@
 import { createPortal } from "react-dom";
 import { Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { Pencil, Trash2 } from "lucide-react";
+import { AlarmClock, Pencil, Sun, Trash2 } from "lucide-react";
 import styles from "./SidekickItemContextMenu.module.css";
 
-export type SidekickMenuAction = "rename" | "delete";
+export type SidekickMenuAction =
+  | "rename"
+  | "snooze-hour"
+  | "snooze-tomorrow"
+  | "wake"
+  | "delete";
 
 const RENAME_ITEM: MenuItem = { id: "rename", label: "Rename", icon: <Pencil size={14} /> };
+const SNOOZE_HOUR_ITEM: MenuItem = {
+  id: "snooze-hour",
+  label: "Snooze for 1 hour",
+  icon: <AlarmClock size={14} />,
+};
+const SNOOZE_TOMORROW_ITEM: MenuItem = {
+  id: "snooze-tomorrow",
+  label: "Snooze until tomorrow",
+  icon: <Sun size={14} />,
+};
+const WAKE_ITEM: MenuItem = { id: "wake", label: "Wake now", icon: <AlarmClock size={14} /> };
 const DELETE_ITEM: MenuItem = { id: "delete", label: "Delete", icon: <Trash2 size={14} /> };
 
 interface Props {
@@ -26,6 +42,12 @@ export function SidekickItemContextMenu({ x, y, menuRef, onAction, actions = ["r
     switch (action) {
       case "rename":
         return RENAME_ITEM;
+      case "snooze-hour":
+        return SNOOZE_HOUR_ITEM;
+      case "snooze-tomorrow":
+        return SNOOZE_TOMORROW_ITEM;
+      case "wake":
+        return WAKE_ITEM;
       case "delete":
         return DELETE_ITEM;
     }

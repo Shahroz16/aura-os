@@ -87,6 +87,10 @@ pub struct StorageSession {
     /// public link; `None` when the session was never shared.
     #[serde(default)]
     pub public_share_id: Option<String>,
+    /// Future wake timestamp, missing on storage deployments predating
+    /// conversation snoozing.
+    #[serde(default)]
+    pub snoozed_until: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +134,10 @@ pub struct UpdateSessionRequest {
     /// `is_public`. Omitted from the wire payload when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_share_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_snooze: Option<bool>,
 }
 
 #[cfg(test)]
@@ -142,6 +150,7 @@ mod tests {
             "id": "11111111-1111-1111-1111-111111111111",
             "isPublic": true,
             "publicShareId": "t_6a1e3d8f6e548191948c1f0a9c68cbda",
+            "snoozedUntil": "2026-09-01T13:00:00Z",
         });
         let session: StorageSession =
             serde_json::from_value(json).expect("deserialize StorageSession");
@@ -150,12 +159,20 @@ mod tests {
             session.public_share_id.as_deref(),
             Some("t_6a1e3d8f6e548191948c1f0a9c68cbda")
         );
+        assert_eq!(
+            session.snoozed_until.as_deref(),
+            Some("2026-09-01T13:00:00Z")
+        );
 
         let reencoded = serde_json::to_value(&session).expect("serialize StorageSession");
         assert_eq!(reencoded["isPublic"], serde_json::json!(true));
         assert_eq!(
             reencoded["publicShareId"],
             serde_json::json!("t_6a1e3d8f6e548191948c1f0a9c68cbda")
+        );
+        assert_eq!(
+            reencoded["snoozedUntil"],
+            serde_json::json!("2026-09-01T13:00:00Z")
         );
     }
 
@@ -168,6 +185,7 @@ mod tests {
         .expect("deserialize legacy StorageSession");
         assert_eq!(session.is_public, None);
         assert_eq!(session.public_share_id, None);
+        assert_eq!(session.snoozed_until, None);
     }
 
     #[test]
@@ -176,6 +194,8 @@ mod tests {
         let json = serde_json::to_value(&req).expect("serialize UpdateSessionRequest");
         assert!(json.get("isPublic").is_none());
         assert!(json.get("publicShareId").is_none());
+        assert!(json.get("snoozedUntil").is_none());
+        assert!(json.get("clearSnooze").is_none());
 
         let req = UpdateSessionRequest {
             is_public: Some(true),
@@ -188,5 +208,22 @@ mod tests {
             json["publicShareId"],
             serde_json::json!("t_6a1e3d8f6e548191948c1f0a9c68cbda")
         );
+
+        let req = UpdateSessionRequest {
+            snoozed_until: Some("2026-09-01T13:00:00Z".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&req).expect("serialize snooze update");
+        assert_eq!(
+            json["snoozedUntil"],
+            serde_json::json!("2026-09-01T13:00:00Z")
+        );
+
+        let req = UpdateSessionRequest {
+            clear_snooze: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&req).expect("serialize wake update");
+        assert_eq!(json["clearSnooze"], serde_json::json!(true));
     }
 }

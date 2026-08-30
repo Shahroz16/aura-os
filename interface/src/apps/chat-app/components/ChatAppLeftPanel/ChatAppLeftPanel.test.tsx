@@ -73,6 +73,7 @@ vi.mock("../../../../components/SessionsList", () => ({
   ),
   formatDeleteSessionError: (e: unknown) => String(e),
   deriveSessionLabel: () => "Session title",
+  useSessionSnoozeAction: () => vi.fn(),
 }));
 
 vi.mock("../../../../components/EmptyState", () => ({
