@@ -10,7 +10,7 @@ use aura_os_core::{
 use aura_os_sessions::{storage_enriched_session_to_enriched_session, storage_session_to_session};
 use aura_os_storage::{
     CreateSessionEventRequest, CreateSessionRequest, StorageClient, StorageSession,
-    StorageSessionEvent, SESSION_STATUS_DELETED,
+    StorageSessionEvent, UpdateSessionRequest, SESSION_STATUS_DELETED,
 };
 
 use crate::error::{map_storage_error, ApiError, ApiResult};
@@ -420,6 +420,65 @@ fn branch_event_prefix(
     };
     events.truncate(target_index + 1);
     Ok(events)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetSessionPinRequest {
+    pinned: bool,
+}
+
+/// Persist or clear a conversation pin after validating that the opaque
+/// session id belongs to the project and agent named by the route.
+pub(crate) async fn set_session_pin(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((project_id, agent_instance_id, session_id)): Path<(
+        ProjectId,
+        AgentInstanceId,
+        SessionId,
+    )>,
+    Json(request): Json<SetSessionPinRequest>,
+) -> ApiResult<axum::http::StatusCode> {
+    let storage = state.require_storage_client()?;
+    let project_id = project_id.to_string();
+    let agent_instance_id = agent_instance_id.to_string();
+    let session_id = session_id.to_string();
+    let session = storage
+        .get_session(&session_id, &jwt)
+        .await
+        .map_err(|error| match &error {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
+                ApiError::not_found("session not found")
+            }
+            _ => map_storage_error(error),
+        })?;
+    reject_deleted_storage_session(&session, "session not found")?;
+    if session
+        .project_id
+        .as_deref()
+        .is_some_and(|id| id != project_id)
+        || session
+            .project_agent_id
+            .as_deref()
+            .is_some_and(|id| id != agent_instance_id)
+    {
+        return Err(ApiError::not_found("session not found"));
+    }
+
+    storage
+        .update_session(
+            &session_id,
+            &jwt,
+            &UpdateSessionRequest {
+                pinned: Some(request.pinned),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(map_storage_error)?;
+    info!(%session_id, pinned = request.pinned, "Session pin changed");
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn delete_session(

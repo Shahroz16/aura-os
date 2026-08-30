@@ -11,6 +11,7 @@ import {
   SidekickList,
   type SidekickListSection,
 } from "../SidekickList";
+import { Pin } from "lucide-react";
 import { isOptimisticSessionId } from "../../stores/sessions-list-store";
 import {
   type AnnotatedSession,
@@ -28,6 +29,7 @@ interface SessionsListProps {
   selectedSessionId: string | null;
   onSessionClick: (session: AnnotatedSession) => void;
   onDeleteSession?: (session: AnnotatedSession) => void;
+  onSetSessionPinned?: (session: AnnotatedSession, pinned: boolean) => void;
   /**
    * Optional hover hook — fired on `onMouseEnter` of each row so the
    * caller can pre-warm the destination chat-history-store entry for
@@ -134,6 +136,7 @@ export function SessionsList({
   selectedSessionId,
   onSessionClick,
   onDeleteSession,
+  onSetSessionPinned,
   onSessionHover,
   searchQuery,
   deleteError,
@@ -201,7 +204,21 @@ export function SessionsList({
     return out;
   }, [safeSessions, summaries, searchQuery]);
 
-  const buckets = useMemo(() => bucketizeByDate(titledRows), [titledRows]);
+  const pinnedRows = useMemo(
+    () =>
+      titledRows
+        .filter(({ session }) => Boolean(session.pinned_at))
+        .sort(
+          (a, b) =>
+            new Date(b.session.pinned_at ?? 0).getTime() -
+            new Date(a.session.pinned_at ?? 0).getTime(),
+        ),
+    [titledRows],
+  );
+  const buckets = useMemo(
+    () => bucketizeByDate(titledRows.filter(({ session }) => !session.pinned_at)),
+    [titledRows],
+  );
   // Check if sessions span multiple projects — only show the project
   // prefix when there's more than one to avoid noise in the common case.
   const hasMultipleProjects = useMemo(() => {
@@ -241,11 +258,30 @@ export function SessionsList({
 
   const handleMenuAction = useCallback(
     (actionId: string, rowId: string) => {
-      if (actionId !== "delete") return;
       const target = sessionById.get(rowId);
-      if (target) onDeleteSession?.(target);
+      if (!target) return;
+      if (actionId === "pin") onSetSessionPinned?.(target, true);
+      if (actionId === "unpin") onSetSessionPinned?.(target, false);
+      if (actionId === "delete") onDeleteSession?.(target);
     },
-    [sessionById, onDeleteSession],
+    [sessionById, onDeleteSession, onSetSessionPinned],
+  );
+
+  const menuActionsForRow = useCallback(
+    (row: { id: string }) => {
+      const target = sessionById.get(row.id);
+      const actions: Array<"pin" | "unpin" | "delete"> = [];
+      if (
+        onSetSessionPinned &&
+        target &&
+        !isOptimisticSessionId(target.session_id)
+      ) {
+        actions.push(target.pinned_at ? "unpin" : "pin");
+      }
+      if (onDeleteSession) actions.push("delete");
+      return actions;
+    },
+    [onDeleteSession, onSetSessionPinned, sessionById],
   );
 
   const handleRowMouseEnter = useCallback(
@@ -258,46 +294,62 @@ export function SessionsList({
     [onSessionHover],
   );
 
-  const sections = useMemo<SidekickListSection[]>(
-    () =>
-      buckets.map((bucket) => ({
+  const sections = useMemo<SidekickListSection[]>(() => {
+    const rowsFor = (rows: SessionRow[]) =>
+      rows.map(({ session, label }: SessionRow) => {
+        const customSuffix = renderRowSuffix?.(session) ?? null;
+        const defaultSuffix =
+          hasMultipleProjects && session._projectName ? (
+            <span className={styles.sessionProject}>{session._projectName}</span>
+          ) : null;
+        const suffix = customSuffix !== null ? customSuffix : defaultSuffix;
+        return {
+          id: session.session_id,
+          label,
+          icon: session.pinned_at ? (
+            <Pin size={13} aria-label="Pinned" />
+          ) : undefined,
+          leadingIndicator: (
+            <SessionStreamingDot
+              session={session}
+              streamKeyForSession={streamKeyForSession}
+            />
+          ),
+          suffix,
+          onSelect: () => onSessionClick(session),
+          onMouseEnter: () => handleRowMouseEnter(session),
+          onFocus: () => handleRowMouseEnter(session),
+          onVisibilityChange: (visible: boolean) =>
+            handleVisibilityChange(session.session_id, visible),
+        };
+      });
+
+    return [
+      ...(pinnedRows.length > 0
+        ? [
+            {
+              id: "Pinned",
+              label: "Pinned",
+              rows: rowsFor(pinnedRows),
+            },
+          ]
+        : []),
+      ...buckets.map((bucket) => ({
         id: bucket.label,
         label: bucket.label,
-        rows: bucket.rows.map(({ session, label }: SessionRow) => {
-          const customSuffix = renderRowSuffix?.(session) ?? null;
-          const defaultSuffix =
-            hasMultipleProjects && session._projectName ? (
-              <span className={styles.sessionProject}>{session._projectName}</span>
-            ) : null;
-          const suffix = customSuffix !== null ? customSuffix : defaultSuffix;
-          return {
-            id: session.session_id,
-            label,
-            leadingIndicator: (
-              <SessionStreamingDot
-                session={session}
-                streamKeyForSession={streamKeyForSession}
-              />
-            ),
-            suffix,
-            onSelect: () => onSessionClick(session),
-            onMouseEnter: () => handleRowMouseEnter(session),
-            onFocus: () => handleRowMouseEnter(session),
-            onVisibilityChange: (visible: boolean) =>
-              handleVisibilityChange(session.session_id, visible),
-          };
-        }),
+        rows: rowsFor(bucket.rows),
       })),
-    [
-      buckets,
-      renderRowSuffix,
-      hasMultipleProjects,
-      streamKeyForSession,
-      onSessionClick,
-      handleRowMouseEnter,
-      handleVisibilityChange,
-    ],
-  );
+    ];
+  }, [
+    buckets,
+    pinnedRows,
+    renderRowSuffix,
+    hasMultipleProjects,
+    streamKeyForSession,
+    onSessionClick,
+    handleRowMouseEnter,
+    handleVisibilityChange,
+  ]);
 
   const errorBanner = deleteError ? (
     <div className={styles.errorBanner} role="alert">
@@ -324,8 +376,12 @@ export function SessionsList({
         loading={loading && safeSessions.length === 0}
         loadingLabel="Loading sessions..."
         empty={<EmptyState>No sessions yet</EmptyState>}
-        menuActions={onDeleteSession ? ["delete"] : undefined}
-        onMenuAction={onDeleteSession ? handleMenuAction : undefined}
+        menuActions={
+          onSetSessionPinned || onDeleteSession ? menuActionsForRow : undefined
+        }
+        onMenuAction={
+          onSetSessionPinned || onDeleteSession ? handleMenuAction : undefined
+        }
         className={styles.chatsList}
       />
     </>

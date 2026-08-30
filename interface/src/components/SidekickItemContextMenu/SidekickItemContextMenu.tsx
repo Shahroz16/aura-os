@@ -1,12 +1,14 @@
 import { createPortal } from "react-dom";
 import { Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import styles from "./SidekickItemContextMenu.module.css";
 
-export type SidekickMenuAction = "rename" | "delete";
+export type SidekickMenuAction = "rename" | "pin" | "unpin" | "delete";
 
 const RENAME_ITEM: MenuItem = { id: "rename", label: "Rename", icon: <Pencil size={14} /> };
+const PIN_ITEM: MenuItem = { id: "pin", label: "Pin to top", icon: <Pin size={14} /> };
+const UNPIN_ITEM: MenuItem = { id: "unpin", label: "Unpin", icon: <PinOff size={14} /> };
 const DELETE_ITEM: MenuItem = { id: "delete", label: "Delete", icon: <Trash2 size={14} /> };
 
 interface Props {
@@ -26,6 +28,10 @@ export function SidekickItemContextMenu({ x, y, menuRef, onAction, actions = ["r
     switch (action) {
       case "rename":
         return RENAME_ITEM;
+      case "pin":
+        return PIN_ITEM;
+      case "unpin":
+        return UNPIN_ITEM;
       case "delete":
         return DELETE_ITEM;
     }
